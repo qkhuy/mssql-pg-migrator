@@ -1,0 +1,85 @@
+name: Release
+
+# Triggered by a version tag (e.g. v0.1.0). Cross-compiles the CLI for all
+# platforms, packages each as an archive with README + LICENSE, computes
+# checksums, and publishes a GitHub Release with auto-generated notes.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release and upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build and package
+        env:
+          CGO_ENABLED: "0" # pgx and go-mssqldb are pure Go — static cross-compile
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          bin="migrator"
+          [ "${GOOS}" = "windows" ] && bin="migrator.exe"
+
+          mkdir -p stage dist
+          go build -trimpath -ldflags "-s -w -X main.version=${version}" -o "stage/${bin}" ./cmd/migrator
+          cp README.md LICENSE CHANGELOG.md stage/
+
+          name="migrator_${version}_${GOOS}_${GOARCH}"
+          if [ "${GOOS}" = "windows" ]; then
+            (cd stage && zip -qr "../dist/${name}.zip" .)
+          else
+            tar -czf "dist/${name}.tar.gz" -C stage .
+          fi
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 1
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

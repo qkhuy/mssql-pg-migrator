@@ -1,5 +1,0 @@
-{
-  "source": { "engine": "demo", "dsn": "" },
-  "target": { "engine": "postgres", "dsn": "" },
-  "migration": { "dry_run": true, "parallelism": 4, "tables": [] }
-}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/qkhuy/mssql-pg-migrator/internal/app"
 	"github.com/qkhuy/mssql-pg-migrator/internal/assess"
+	"github.com/qkhuy/mssql-pg-migrator/internal/config"
 	"github.com/qkhuy/mssql-pg-migrator/internal/pipeline"
 
 	// Registered engines (same set as the CLI).
@@ -39,6 +40,49 @@ func (a *App) Engines() map[string][]string {
 // indicator. They resolve (no error) on success and reject on failure.
 func (a *App) TestSource(e app.Endpoint) error { return a.svc.TestSource(a.ctx, e) }
 func (a *App) TestTarget(e app.Endpoint) error { return a.svc.TestTarget(a.ctx, e) }
+
+// SaveConfig builds a config from the current form values and writes it as YAML
+// via a native save dialog. Returns the saved path, or "" if cancelled.
+func (a *App) SaveConfig(src, dst app.Endpoint, opts app.RunOptions) (string, error) {
+	c := &config.Config{
+		Source:    config.Endpoint{Engine: src.Engine, DSN: src.DSN},
+		Target:    config.Endpoint{Engine: dst.Engine, DSN: dst.DSN},
+		Migration: config.Migration{Parallelism: opts.Parallelism, Tables: opts.Tables},
+	}
+	b, err := config.Marshal(c)
+	if err != nil {
+		return "", err
+	}
+	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+		Title:           "Lưu config",
+		DefaultFilename: "config.yaml",
+		Filters:         []wruntime.FileFilter{{DisplayName: "YAML", Pattern: "*.yaml;*.yml"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// LoadConfig opens a YAML/JSON config via a native dialog and returns it so the
+// frontend can populate the form. Returns nil if the user cancelled.
+func (a *App) LoadConfig() (*config.Config, error) {
+	path, err := wruntime.OpenFileDialog(a.ctx, wruntime.OpenDialogOptions{
+		Title:   "Nạp config",
+		Filters: []wruntime.FileFilter{{DisplayName: "Config", Pattern: "*.yaml;*.yml;*.json"}},
+	})
+	if err != nil || path == "" {
+		return nil, err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return config.Parse(b)
+}
 
 // Assess returns the full assessment (JSON-serialized to the frontend, which
 // renders the table/column/type mappings and status badges).

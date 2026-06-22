@@ -3,6 +3,7 @@
   // They expose the Go App methods (ui/app.go) to the frontend.
   import {
     Engines, TestSource, TestTarget, Assess, ExportAssessHTML, Plan, Run,
+    SaveConfig, LoadConfig,
   } from "../wailsjs/go/main/App";
   import { EventsOn } from "../wailsjs/runtime/runtime";
   import { onMount } from "svelte";
@@ -54,13 +55,34 @@
   const doPlan = () => call(async () => { report = await Plan(src, dst, opts); assessment = null; });
   const doRun = () => call(async () => { progress = {}; report = await Run(src, dst, opts); });
 
+  let cfgMsg = "";
+  const saveConfig = () => call(async () => {
+    const p = await SaveConfig(src, dst, opts);
+    cfgMsg = p ? "Đã lưu config: " + p : "";
+  });
+  const loadConfig = () => call(async () => {
+    const c = await LoadConfig();
+    if (!c) return;
+    src = { engine: c.source.engine, dsn: c.source.dsn };
+    dst = { engine: c.target.engine, dsn: c.target.dsn };
+    opts = { ...opts, parallelism: c.migration.parallelism || 4, tables: c.migration.tables || [] };
+    cfgMsg = "Đã nạp config.";
+  });
+
   const badge = (s) => ["auto", "review", "unsupported"][s] || "auto";
   const label = (s) => ["Tự động", "Cần review", "Không hỗ trợ"][s] || "?";
   const dot = (st) => st === "ok" ? "🟢" : st === "fail" ? "🔴" : "";
 </script>
 
 <main>
-  <h1>migrator — DB Migration</h1>
+  <div class="topbar">
+    <h1>migrator — DB Migration</h1>
+    <div class="cfgbtns">
+      <button on:click={loadConfig} disabled={busy}>Nạp config</button>
+      <button on:click={saveConfig} disabled={busy}>Lưu config</button>
+    </div>
+  </div>
+  {#if cfgMsg}<p class="muted">{cfgMsg}</p>{/if}
 
   <section class="conn">
     <div class="card">

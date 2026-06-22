@@ -27,18 +27,28 @@ go build -o migrator ./cmd/migrator
 
 ## Configuration
 
-A JSON file describes the source, target, and run options:
+A YAML file describes the source, target, and run options (JSON also parses,
+since YAML is a superset):
 
-```json
-{
-  "source": { "engine": "mssql",    "dsn": "sqlserver://user:pass@host:1433?database=SourceDB" },
-  "target": { "engine": "postgres", "dsn": "postgres://user:pass@host:5432/targetdb?sslmode=require" },
-  "migration": { "dry_run": false, "parallelism": 4, "tables": [] }
-}
+```yaml
+source:
+  engine: mssql
+  dsn: "sqlserver://user:pass@host:1433?database=SourceDB"
+target:
+  engine: postgres
+  dsn: "postgres://user:pass@host:5432/targetdb?sslmode=require"
+migration:
+  dry_run: false
+  parallelism: 4
+  tables: []        # empty = all tables
 ```
 
 `tables: []` migrates everything; list names to migrate a subset. Keep secrets
 out of the file where possible (e.g. inject the DSN from the environment).
+
+You don't have to write this by hand: the **desktop UI** can build the config
+from its form and save it (and load an existing one back into the form) — see
+[Desktop UI](#desktop-ui-wails).
 
 ## Workflow
 

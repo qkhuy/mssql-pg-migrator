@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>migrator — UI mockup</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --panel:#ffffff; --rail:#0f172a; --rail-2:#1e293b;
+    --ink:#0f172a; --muted:#64748b; --line:#e6e8ec;
+    --brand:#4f46e5; --brand-weak:#eef2ff;
+    --ok:#16a34a; --ok-bg:#dcfce7; --warn:#d97706; --warn-bg:#fef3c7; --bad:#dc2626; --bad-bg:#fee2e2;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
+    --radius:12px; --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.1);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);color:var(--ink);background:var(--bg);font-size:14px;line-height:1.5}
+  .app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
+
+  /* sidebar */
+  .rail{background:var(--rail);color:#cbd5e1;display:flex;flex-direction:column;padding:18px 14px}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 18px;color:#fff;font-weight:700;font-size:16px}
+  .brand .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#22d3ee);display:grid;place-items:center;font-size:15px}
+  .steps{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .step{display:flex;align-items:center;gap:11px;padding:10px 10px;border-radius:9px;cursor:pointer;color:#94a3b8;font-weight:500}
+  .step:hover{background:var(--rail-2);color:#e2e8f0}
+  .step.active{background:var(--brand);color:#fff}
+  .step .num{width:22px;height:22px;border-radius:50%;border:1.5px solid #475569;display:grid;place-items:center;font-size:12px;flex:0 0 auto}
+  .step.active .num{border-color:#fff;background:#fff;color:var(--brand)}
+  .step.done .num{border-color:#22c55e;background:#22c55e;color:#06281a}
+  .step small{display:block;color:#64748b;font-weight:400;font-size:11px}
+  .step.active small{color:#c7d2fe}
+  .rail-foot{margin-top:auto;font-size:11px;color:#475569;padding:10px 8px;border-top:1px solid var(--rail-2)}
+
+  /* main */
+  .main{overflow:auto}
+  .topbar{position:sticky;top:0;background:rgba(255,255,255,.85);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
+    padding:14px 28px;display:flex;align-items:center;justify-content:space-between;z-index:5}
+  .topbar h1{font-size:17px;margin:0}
+  .conn-pill{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);background:#fff;border:1px solid var(--line);padding:6px 11px;border-radius:999px}
+  .conn-pill b{color:var(--ink)}
+  .content{padding:28px;max-width:1080px}
+  .screen{display:none}
+  .screen.show{display:block;animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  h2.title{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .pad{padding:20px}
+  label.f{display:block;font-size:12px;font-weight:600;color:#334155;margin:14px 0 5px}
+  .inp,select.inp{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fff;color:var(--ink)}
+  .inp:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-weak)}
+  .row{display:flex;gap:10px}
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-weight:600;cursor:pointer}
+  .btn:hover{background:#f8fafc}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn.ghost{border-color:transparent;background:transparent;color:var(--brand)}
+  .cardhead{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+  .cardhead h3{margin:0;font-size:14px}
+  .chip{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .chip.ok{color:var(--ok);background:var(--ok-bg)} .chip.warn{color:var(--warn);background:var(--warn-bg)} .chip.bad{color:var(--bad);background:var(--bad-bg)}
+  .chip.idle{color:var(--muted);background:#f1f5f9}
+  .muted{color:var(--muted)} .mono{font-family:var(--mono);font-size:12.5px}
+  .foot-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+
+  /* stat cards */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+  .stat .n{font-size:24px;font-weight:700}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .meter{height:10px;border-radius:6px;overflow:hidden;display:flex;border:1px solid var(--line);margin:6px 0}
+  .meter i{display:block;height:100%}
+  .meter .a{background:var(--ok)} .meter .r{background:#eab308} .meter .u{background:var(--bad)}
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:#fbfcfd}
+  tr:last-child td{border-bottom:none}
+  code.t{font-family:var(--mono);background:#f1f5f9;padding:1px 6px;border-radius:5px;font-size:12px}
+  .arrow{color:#94a3b8;padding:0 4px}
+
+  .tbl-acc{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden;background:#fff}
+  .tbl-acc>summary{list-style:none;cursor:pointer;padding:13px 16px;display:flex;align-items:center;gap:12px}
+  .tbl-acc>summary::-webkit-details-marker{display:none}
+  .tbl-acc[open]>summary{border-bottom:1px solid var(--line);background:#fbfcfd}
+  .tbl-acc .name{font-weight:600} .tbl-acc .rowsn{margin-left:auto;color:var(--muted);font-size:12px}
+
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+  .search{flex:1;position:relative}
+  .search .inp{padding-left:34px}
+  .search svg{position:absolute;left:10px;top:9px;color:#94a3b8}
+
+  /* plan */
+  .plan{display:grid;grid-template-columns:300px 1fr;gap:18px}
+  .tablelist{max-height:420px;overflow:auto}
+  .tablelist .it{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)}
+  .tablelist .it:hover{background:#f8fafc}
+  .codeblock{background:#0b1020;color:#cbd5e1;border-radius:10px;padding:16px;font-family:var(--mono);font-size:12.5px;overflow:auto;max-height:420px;line-height:1.7}
+  .codeblock .k{color:#7dd3fc} .codeblock .t{color:#fca5a5;background:none;padding:0} .codeblock .c{color:#64748b}
+  .warnbox{margin-top:14px;border:1px solid var(--warn-bg);background:#fffbeb;border-radius:10px;padding:12px 14px;font-size:13px}
+
+  /* migrate */
+  .runhead{display:flex;align-items:center;gap:24px;margin-bottom:18px}
+  .ring{--p:62;width:96px;height:96px;border-radius:50%;flex:0 0 auto;
+    background:conic-gradient(var(--brand) calc(var(--p)*1%),#e9edf3 0);display:grid;place-items:center}
+  .ring i{width:74px;height:74px;border-radius:50%;background:#fff;display:grid;place-items:center;font-weight:700;font-size:20px;font-style:normal}
+  .runstats{display:flex;gap:30px}
+  .runstats div .n{font-size:18px;font-weight:700} .runstats div .l{font-size:12px;color:var(--muted)}
+  .prow{display:flex;align-items:center;gap:14px;padding:11px 4px;border-bottom:1px solid var(--line)}
+  .prow .pn{width:190px;font-weight:500}
+  .pbar{flex:1;height:8px;background:#eef1f5;border-radius:5px;overflow:hidden}
+  .pbar i{display:block;height:100%;background:var(--brand)}
+  .pmeta{width:150px;text-align:right;color:var(--muted);font-size:12px}
+  .console{margin-top:16px;background:#0b1020;color:#9aa6b2;border-radius:10px;padding:14px 16px;font-family:var(--mono);font-size:12px;height:150px;overflow:auto;line-height:1.8}
+  .console .ok{color:#4ade80}.console .info{color:#7dd3fc}.console .warn{color:#fbbf24}
+
+  .banner{display:flex;align-items:center;gap:14px;background:var(--ok-bg);border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:20px}
+  .banner .ic{width:40px;height:40px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:20px}
+  .banner h3{margin:0;color:#14532d}.banner p{margin:2px 0 0;color:#166534}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="rail">
+    <div class="brand"><span class="logo">⇄</span> migrator</div>
+    <nav class="steps" id="nav">
+      <div class="step done" data-s="connect"><span class="num">✓</span><div>Kết nối<small>Nguồn & đích</small></div></div>
+      <div class="step active" data-s="assess"><span class="num">2</span><div>Đánh giá<small>Phân tích lược đồ</small></div></div>
+      <div class="step" data-s="plan"><span class="num">3</span><div>Kế hoạch<small>Xem trước DDL</small></div></div>
+      <div class="step" data-s="migrate"><span class="num">4</span><div>Di chuyển<small>Chuyển dữ liệu</small></div></div>
+      <div class="step" data-s="validate"><span class="num">5</span><div>Kiểm chứng<small>Đối chiếu kết quả</small></div></div>
+    </nav>
+    <div class="rail-foot">v0.1.0 · SQL Server → PostgreSQL</div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <h1 id="ttl">Đánh giá khả năng migrate</h1>
+      <div class="conn-pill"><b>SourceDB</b> <span class="arrow">→</span> <b>targetdb</b> <span class="chip ok">đã kết nối</span></div>
+    </div>
+    <div class="content">
+
+      <!-- 1. CONNECT -->
+      <section class="screen" data-screen="connect">
+        <h2 class="title">Kết nối cơ sở dữ liệu</h2>
+        <p class="sub">Chọn engine nguồn và đích, kiểm tra kết nối. Nguồn chỉ được đọc.</p>
+        <div class="grid2">
+          <div class="card">
+            <div class="cardhead"><h3>① Nguồn</h3><span class="chip ok">● Kết nối OK</span></div>
+            <div class="pad">
+              <label class="f">Engine</label>
+              <select class="inp"><option>SQL Server (mssql)</option><option>PostgreSQL</option><option>MySQL</option></select>
+              <div class="row"><div style="flex:2"><label class="f">Host</label><input class="inp" value="10.0.0.21"></div>
+                <div style="flex:1"><label class="f">Port</label><input class="inp" value="1433"></div></div>
+              <label class="f">Database</label><input class="inp" value="SourceDB">
+              <div class="row"><div style="flex:1"><label class="f">User</label><input class="inp" value="sa"></div>
+                <div style="flex:1"><label class="f">Password</label><input class="inp" type="password" value="••••••••"></div></div>
+              <div style="margin-top:14px"><button class="btn">Kiểm tra kết nối</button></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="cardhead"><h3>② Đích</h3><span class="chip idle">○ Chưa test</span></div>
+            <div class="pad">
+              <label class="f">Engine</label>
+              <select class="inp"><option>PostgreSQL</option><option>MySQL</option></select>
+              <div class="row"><div style="flex:2"><label class="f">Host</label><input class="inp" value="db.internal"></div>
+                <div style="flex:1"><label class="f">Port</label><input class="inp" value="5432"></div></div>
+              <label class="f">Database</label><input class="inp" value="targetdb">
+              <div class="row"><div style="flex:1"><label class="f">User</label><input class="inp" value="migrator"></div>
+                <div style="flex:1"><label class="f">Password</label><input class="inp" type="password" value="••••••••"></div></div>
+              <div style="margin-top:14px"><button class="btn">Kiểm tra kết nối</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot-actions">
+          <button class="btn">Nạp config (.yaml)</button>
+          <button class="btn">Lưu config</button>
+          <button class="btn primary" onclick="go('assess')">Tiếp tục → Đánh giá</button>
+        </div>
+      </section>
+
+      <!-- 2. ASSESS -->
+      <section class="screen show" data-screen="assess">
+        <h2 class="title">Báo cáo đánh giá</h2>
+        <p class="sub">Mọi thứ sẽ migrate và ánh xạ thành gì — xem kỹ trước khi chạy.</p>
+        <div class="stats">
+          <div class="stat"><div class="n">3</div><div class="l">Bảng</div></div>
+          <div class="stat"><div class="n">17</div><div class="l">Cột</div></div>
+          <div class="stat"><div class="n">15.5M</div><div class="l">Dòng (ước tính)</div></div>
+          <div class="stat"><div class="n" style="color:var(--brand)">76%</div><div class="l">Tự động</div></div>
+        </div>
+        <div class="card pad" style="margin-bottom:18px">
+          <div class="meter"><i class="a" style="width:76%"></i><i class="r" style="width:19%"></i><i class="u" style="width:5%"></i></div>
+          <div class="legend">
+            <span><i class="dot" style="background:var(--ok)"></i> 16 tự động</span>
+            <span><i class="dot" style="background:#eab308"></i> 4 cần review</span>
+            <span><i class="dot" style="background:var(--bad)"></i> 1 không hỗ trợ</span>
+            <span style="margin-left:auto"><button class="btn ghost">⤓ Export HTML</button><button class="btn ghost">⤓ Markdown</button></span>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg><input class="inp" placeholder="Tìm bảng / cột..."></div>
+          <button class="btn">Lọc: Tất cả ▾</button>
+        </div>
+
+        <details class="tbl-acc" open>
+          <summary><span class="chip bad">❌</span><span class="name mono">dbo.Orders</span> <span class="arrow">→</span> <span class="mono">orders</span><span class="rowsn">~3,200,000 dòng</span></summary>
+          <table>
+            <tr><th>Cột nguồn</th><th></th><th>Cột đích</th><th>Kiểu nguồn</th><th></th><th>Kiểu đích</th><th>Trạng thái</th></tr>
+            <tr><td class="mono">OrderID</td><td class="arrow">→</td><td class="mono">orderid</td><td><code class="t">bigint IDENTITY</code></td><td class="arrow">→</td><td><code class="t">bigint</code></td><td><span class="chip ok">Tự động</span></td></tr>
+            <tr><td class="mono">Total</td><td class="arrow">→</td><td class="mono">total</td><td><code class="t">money</code></td><td class="arrow">→</td><td><code class="t">numeric(19,4)</code></td><td><span class="chip ok">Tự động</span></td></tr>
+            <tr><td class="mono">ShipLocation</td><td class="arrow">→</td><td class="mono">shiplocation</td><td><code class="t">geography</code></td><td class="arrow">→</td><td><code class="t">text</code></td><td><span class="chip bad">Không hỗ trợ</span></td></tr>
+            <tr><td class="mono">PlacedAt</td><td class="arrow">→</td><td class="mono">placedat</td><td><code class="t">datetimeoffset</code></td><td class="arrow">→</td><td><code class="t">timestamptz</code></td><td><span class="chip ok">Tự động</span></td></tr>
+          </table>
+        </details>
+        <details class="tbl-acc">
+          <summary><span class="chip ok">✓</span><span class="name mono">dbo.Customers</span> <span class="arrow">→</span> <span class="mono">customers</span><span class="rowsn">~500,000 dòng</span></summary>
+        </details>
+        <details class="tbl-acc">
+          <summary><span class="chip ok">✓</span><span class="name mono">dbo.OrderItems</span> <span class="arrow">→</span> <span class="mono">orderitems</span><span class="rowsn">~11,800,000 dòng</span></summary>
+        </details>
+
+        <div class="card" style="margin-top:18px">
+          <div class="cardhead"><h3>View & Routine</h3><span class="muted" style="font-size:12px">cần dịch & review thủ công</span></div>
+          <table>
+            <tr><th>Loại</th><th>Đối tượng</th><th>Trạng thái</th></tr>
+            <tr><td>view</td><td class="mono">dbo.vw_CustomerOrderTotals</td><td><span class="chip warn">Cần review</span></td></tr>
+            <tr><td>procedure</td><td class="mono">dbo.sp_GetCustomerOrders</td><td><span class="chip warn">Cần review</span></td></tr>
+            <tr><td>trigger</td><td class="mono">dbo.trg_Orders_Audit</td><td><span class="chip warn">Cần review</span></td></tr>
+          </table>
+        </div>
+        <div class="foot-actions"><button class="btn primary" onclick="go('plan')">Tiếp tục → Kế hoạch</button></div>
+      </section>
+
+      <!-- 3. PLAN -->
+      <section class="screen" data-screen="plan">
+        <h2 class="title">Kế hoạch & xem trước DDL</h2>
+        <p class="sub">Chọn bảng cần migrate. DDL sẽ chạy trên đích — chưa ghi gì cho tới khi bạn xác nhận.</p>
+        <div class="plan">
+          <div class="card">
+            <div class="cardhead"><h3>Bảng (3)</h3><span class="muted" style="font-size:12px">đã chọn 3</span></div>
+            <div class="tablelist">
+              <div class="it"><input type="checkbox" checked> <span class="mono">Orders</span> <span class="rowsn muted" style="margin-left:auto;font-size:12px">3.2M</span></div>
+              <div class="it"><input type="checkbox" checked> <span class="mono">Customers</span> <span class="muted" style="margin-left:auto;font-size:12px">500K</span></div>
+              <div class="it"><input type="checkbox" checked> <span class="mono">OrderItems</span> <span class="muted" style="margin-left:auto;font-size:12px">11.8M</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="codeblock"><span class="c">-- target: postgres · 3 statements</span><br>
+<span class="k">CREATE TABLE IF NOT EXISTS</span> orders (<br>
+&nbsp;&nbsp;orderid <span class="t">bigint</span> <span class="k">GENERATED BY DEFAULT AS IDENTITY</span>,<br>
+&nbsp;&nbsp;total <span class="t">numeric(19,4)</span>,<br>
+&nbsp;&nbsp;shiplocation <span class="t">text</span>, <span class="c">-- ⚠ geography</span><br>
+&nbsp;&nbsp;placedat <span class="t">timestamptz</span> <span class="k">NOT NULL</span>,<br>
+&nbsp;&nbsp;<span class="k">PRIMARY KEY</span> (orderid)<br>
+);<br><br>
+<span class="k">CREATE TABLE IF NOT EXISTS</span> customers ( … );
+            </div>
+            <div class="warnbox">⚠ <b>1 cảnh báo:</b> <code class="t">dbo.Orders.shiplocation</code> kiểu <code class="t">geography</code> chưa có ánh xạ — map tạm sang <code class="t">text</code>, cần PostGIS / review thủ công.</div>
+          </div>
+        </div>
+        <div class="foot-actions">
+          <button class="btn" onclick="go('assess')">← Quay lại</button>
+          <button class="btn primary" onclick="go('migrate')">Bắt đầu di chuyển →</button>
+        </div>
+      </section>
+
+      <!-- 4. MIGRATE -->
+      <section class="screen" data-screen="migrate">
+        <h2 class="title">Đang di chuyển dữ liệu</h2>
+        <p class="sub">Chạy song song theo bảng · có thể tạm dừng & resume.</p>
+        <div class="card pad">
+          <div class="runhead">
+            <div class="ring" style="--p:62"><i>62%</i></div>
+            <div class="runstats">
+              <div><div class="n">9.6M</div><div class="l">dòng đã ghi</div></div>
+              <div><div class="n">312K/s</div><div class="l">tốc độ</div></div>
+              <div><div class="n">00:31</div><div class="l">đã chạy</div></div>
+              <div><div class="n">~00:19</div><div class="l">còn lại (ETA)</div></div>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:10px">
+              <button class="btn">⏸ Tạm dừng</button><button class="btn">✕ Huỷ</button>
+            </div>
+          </div>
+          <div class="prow"><span class="pn mono">Customers <span class="chip ok" style="margin-left:6px">✓</span></span><div class="pbar"><i style="width:100%"></i></div><span class="pmeta">500,000 / 500,000</span></div>
+          <div class="prow"><span class="pn mono">Orders</span><div class="pbar"><i style="width:84%"></i></div><span class="pmeta">2.69M / 3.2M · 84%</span></div>
+          <div class="prow"><span class="pn mono">OrderItems</span><div class="pbar"><i style="width:54%;background:#818cf8"></i></div><span class="pmeta">6.4M / 11.8M · 54%</span></div>
+          <div class="console">
+<span class="info">[14:02:11] schema</span> created 3 tables + primary keys<br>
+<span class="ok">[14:02:12] Customers</span> done — 500,000 rows in 1.6s<br>
+<span class="info">[14:02:14] Orders</span> copying… 2,690,000 rows<br>
+<span class="info">[14:02:14] OrderItems</span> copying… 6,400,000 rows<br>
+<span class="warn">[14:02:30] checkpoint</span> saved (.migrator-state.json)
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. VALIDATE -->
+      <section class="screen" data-screen="validate">
+        <h2 class="title">Kiểm chứng & hoàn tất</h2>
+        <p class="sub">Đối chiếu số dòng nguồn ↔ đích sau khi tạo lại index, FK, sequence.</p>
+        <div class="banner">
+          <div class="ic">✓</div>
+          <div><h3>Migration hoàn tất</h3><p>3/3 bảng · 15,500,000 dòng · 50 giây · finalize ✓ · validate ✓</p></div>
+        </div>
+        <div class="card">
+          <div class="cardhead"><h3>Kết quả đối chiếu</h3><button class="btn ghost">⤓ Export báo cáo</button></div>
+          <table>
+            <tr><th>Bảng</th><th>Dòng nguồn</th><th>Dòng đích</th><th>Thời gian</th><th>Trạng thái</th></tr>
+            <tr><td class="mono">customers</td><td>500,000</td><td>500,000</td><td>1.6s</td><td><span class="chip ok">Khớp</span></td></tr>
+            <tr><td class="mono">orders</td><td>3,200,000</td><td>3,200,000</td><td>11.2s</td><td><span class="chip ok">Khớp</span></td></tr>
+            <tr><td class="mono">orderitems</td><td>11,800,000</td><td>11,800,000</td><td>37.4s</td><td><span class="chip ok">Khớp</span></td></tr>
+          </table>
+        </div>
+        <div class="warnbox" style="margin-top:16px">⚠ <b>3 đối tượng cần xử lý thủ công:</b> 1 view, 1 procedure, 1 trigger — đã xuất skeleton kèm T-SQL gốc để review.</div>
+        <div class="foot-actions"><button class="btn">Migration mới</button><button class="btn primary">Xong</button></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+<script>
+  const titles={connect:"Kết nối cơ sở dữ liệu",assess:"Đánh giá khả năng migrate",plan:"Kế hoạch & xem trước",migrate:"Đang di chuyển dữ liệu",validate:"Kiểm chứng & hoàn tất"};
+  function go(s){
+    document.querySelectorAll('.screen').forEach(e=>e.classList.toggle('show',e.dataset.screen===s));
+    document.querySelectorAll('.step').forEach(e=>e.classList.toggle('active',e.dataset.s===s));
+    document.getElementById('ttl').textContent=titles[s];
+    document.querySelector('.main').scrollTo(0,0);
+  }
+  document.getElementById('nav').addEventListener('click',e=>{const st=e.target.closest('.step');if(st)go(st.dataset.s)});
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# Binaries
+/migrator
+/bin/
+*.exe
+
+# Local config with secrets
+config.json
+config.local.json
+
+# Go
+*.test
+*.out

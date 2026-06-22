@@ -80,6 +80,23 @@ Procedures, functions, triggers, and view bodies are reported as
 manual-review items — cross-dialect logic translation is not auto-applied (a
 planned, opt-in enhancement).
 
+## Desktop UI (Wails)
+
+A desktop GUI lives in [`ui/`](ui/) — a [Wails](https://wails.io) app (Go +
+Svelte) that binds the **same** `internal/app` service the CLI uses, so both
+surfaces behave identically. It provides the connection screen, the assessment
+view (table/column/type mappings with status badges), dry-run, and a live
+per-table progress view during `run`.
+
+It is a separate Go module so the CLI/core build stays independent of the GUI
+toolchain. Build it with the Wails CLI:
+
+```bash
+cd ui && wails dev      # or: wails build
+```
+
+See [ui/README.md](ui/README.md) for prerequisites.
+
 ## Extending to other engines
 
 The tool uses a canonical intermediate representation, so adding an engine is

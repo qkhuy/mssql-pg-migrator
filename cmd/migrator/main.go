@@ -1,7 +1,6 @@
-// Command migrator is the CLI entry point. Source and target engines are
-// plugged in via blank imports below: importing an adapter package runs its
-// init(), which registers it. Supporting a new engine is one new package plus
-// one import line — no changes to the pipeline.
+// Command migrator is the CLI entry point. It is a thin shell over the shared
+// service layer (internal/app) — the same service the Wails desktop UI uses, so
+// CLI and UI behave identically.
 //
 // Usage:
 //
@@ -17,12 +16,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/qkhuy/mssql-pg-migrator/internal/assess"
+	"github.com/qkhuy/mssql-pg-migrator/internal/app"
 	"github.com/qkhuy/mssql-pg-migrator/internal/config"
 	"github.com/qkhuy/mssql-pg-migrator/internal/pipeline"
 	"github.com/qkhuy/mssql-pg-migrator/internal/report"
-	"github.com/qkhuy/mssql-pg-migrator/internal/source"
-	"github.com/qkhuy/mssql-pg-migrator/internal/target"
 
 	// Registered engines. Add a line here when you add an adapter.
 	_ "github.com/qkhuy/mssql-pg-migrator/internal/source/demo"
@@ -39,10 +36,12 @@ func main() {
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 
+	svc := app.New()
 	var err error
 	switch cmd {
 	case "engines":
-		fmt.Printf("sources: %v\ntargets: %v\n", source.Engines(), target.Engines())
+		src, dst := svc.Engines()
+		fmt.Printf("sources: %v\ntargets: %v\n", src, dst)
 		return
 	case "version", "-version", "--version", "-v":
 		fmt.Printf("migrator %s\n", version)
@@ -51,11 +50,11 @@ func main() {
 		usage()
 		return
 	case "assess":
-		err = cmdAssess(args)
+		err = cmdAssess(svc, args)
 	case "plan":
-		err = cmdRun(args, true)
+		err = cmdRun(svc, args, true)
 	case "run":
-		err = cmdRun(args, false)
+		err = cmdRun(svc, args, false)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", cmd)
 		usage()
@@ -85,7 +84,7 @@ Run "migrator <command> -h" for command flags.
 `, version)
 }
 
-func cmdAssess(args []string) error {
+func cmdAssess(svc *app.Service, args []string) error {
 	fs := flag.NewFlagSet("assess", flag.ExitOnError)
 	cfgPath := fs.String("config", "", "path to JSON config file (required)")
 	format := fs.String("format", "html", "report format: html | md")
@@ -97,23 +96,10 @@ func cmdAssess(args []string) error {
 		return err
 	}
 
-	ctx := context.Background()
-	src, err := source.Open(ctx, cfg.Source.Engine, cfg.Source.DSN)
+	a, err := svc.Assess(context.Background(), endpoint(cfg.Source), endpoint(cfg.Target))
 	if err != nil {
 		return err
 	}
-	defer src.Close()
-
-	schema, err := src.Introspect(ctx)
-	if err != nil {
-		return fmt.Errorf("introspect: %w", err)
-	}
-	mapper, err := target.NewMapper(cfg.Target.Engine)
-	if err != nil {
-		return err
-	}
-
-	a := assess.Build(cfg.Source.Engine, cfg.Target.Engine, schema, mapper)
 
 	var rendered string
 	switch *format {
@@ -139,7 +125,7 @@ func cmdAssess(args []string) error {
 	return nil
 }
 
-func cmdRun(args []string, dryRun bool) error {
+func cmdRun(svc *app.Service, args []string, dryRun bool) error {
 	name := "run"
 	if dryRun {
 		name = "plan"
@@ -160,42 +146,37 @@ func cmdRun(args []string, dryRun bool) error {
 	if par == 0 {
 		par = cfg.Migration.Parallelism
 	}
+	opts := app.RunOptions{Parallelism: par, Tables: cfg.Migration.Tables, StateFile: *state}
 
 	ctx := context.Background()
-	src, err := source.Open(ctx, cfg.Source.Engine, cfg.Source.DSN)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	// Dry-run renders DDL only and needs no live target connection.
-	var dst target.Target
+	var rep *pipeline.Report
 	if dry {
-		dst, err = target.New(cfg.Target.Engine)
+		rep, err = svc.Plan(ctx, endpoint(cfg.Source), endpoint(cfg.Target), opts)
 	} else {
-		dst, err = target.Open(ctx, cfg.Target.Engine, cfg.Target.DSN)
+		rep, err = svc.Run(ctx, endpoint(cfg.Source), endpoint(cfg.Target), opts, cliProgress)
 	}
-	if err != nil {
-		return err
-	}
-	defer dst.Close()
-
-	m := &pipeline.Migrator{
-		Src: src,
-		Dst: dst,
-		Opts: pipeline.Options{
-			DryRun:      dry,
-			Parallelism: par,
-			Tables:      cfg.Migration.Tables,
-			StateFile:   *state,
-		},
-	}
-
-	rep, runErr := m.Run(ctx)
 	if rep != nil {
 		printReport(rep)
 	}
-	return runErr
+	return err
+}
+
+// cliProgress prints concise progress lines as events arrive.
+func cliProgress(p pipeline.Progress) {
+	switch {
+	case p.Table == "" && p.Done:
+		fmt.Printf("[%s] done\n", p.Phase)
+	case p.Table != "" && p.Done && p.Err != nil:
+		fmt.Printf("  %-34s ERROR: %v\n", p.Table, p.Err)
+	case p.Table != "" && p.Done:
+		fmt.Printf("  %-34s %d rows\n", p.Table, p.RowsWritten)
+	case p.Table != "" && p.RowsWritten > 0:
+		fmt.Printf("  %-34s %d rows...\n", p.Table, p.RowsWritten)
+	}
+}
+
+func endpoint(e config.Endpoint) app.Endpoint {
+	return app.Endpoint{Engine: e.Engine, DSN: e.DSN}
 }
 
 func loadConfig(path string) (*config.Config, error) {

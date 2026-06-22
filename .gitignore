@@ -15,3 +15,14 @@ config.local.json
 assessment.html
 assessment.md
 *.report.html
+
+# Wails UI build artifacts / generated bindings / deps
+ui/build/bin/
+ui/frontend/dist/*
+!ui/frontend/dist/.gitkeep
+ui/frontend/node_modules/
+ui/frontend/wailsjs/
+
+# stray UI binaries
+ui/ui
+ui/migrator-ui

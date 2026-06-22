@@ -29,7 +29,34 @@ type Migrator struct {
 	Src  source.Source
 	Dst  target.Target
 	Opts Options
+
+	// OnProgress, if set, receives progress events during Run. It may be called
+	// concurrently from multiple table workers, so implementations must be
+	// safe for concurrent use. Used by both the CLI and the UI.
+	OnProgress ProgressFunc
 }
+
+// Progress is a single migration progress event.
+type Progress struct {
+	Phase       string // "schema", "data", "finalize", "validate"
+	Table       string // empty for phase-level events
+	RowsWritten int64
+	Total       int64 // estimated row count (data phase)
+	Done        bool
+	Err         error
+}
+
+// ProgressFunc consumes progress events.
+type ProgressFunc func(Progress)
+
+func (m *Migrator) emit(p Progress) {
+	if m.OnProgress != nil {
+		m.OnProgress(p)
+	}
+}
+
+// progressEvery controls how often a long table emits an in-progress event.
+const progressEvery = 50_000
 
 // TableResult records the outcome for one table.
 type TableResult struct {
@@ -87,6 +114,7 @@ func (m *Migrator) Run(ctx context.Context) (*Report, error) {
 		}
 		cp.markSchemaApplied()
 	}
+	m.emit(Progress{Phase: "schema", Done: true})
 
 	results := m.loadAll(ctx, tables, cp)
 	report.Tables = results
@@ -98,8 +126,10 @@ func (m *Migrator) Run(ctx context.Context) (*Report, error) {
 		return report, fmt.Errorf("finalize (indexes/foreign keys/sequences): %w", err)
 	}
 	report.Finalized = true
+	m.emit(Progress{Phase: "finalize", Done: true})
 
 	m.validate(ctx, tables, report)
+	m.emit(Progress{Phase: "validate", Done: true})
 	cp.clear()
 	return report, nil
 }
@@ -138,15 +168,19 @@ func (m *Migrator) migrateTable(ctx context.Context, t *ir.Table) TableResult {
 	start := time.Now()
 	res := TableResult{Table: qname(t), SourceRows: -1}
 
+	m.emit(Progress{Phase: "data", Table: res.Table, Total: t.EstimatedRows})
+
 	stream, err := m.Src.Read(ctx, t, source.Range{})
 	if err != nil {
 		res.Err = fmt.Errorf("read: %w", err)
 		res.Duration = time.Since(start)
+		m.emit(Progress{Phase: "data", Table: res.Table, Total: t.EstimatedRows, Done: true, Err: res.Err})
 		return res
 	}
 	defer stream.Close()
 
-	n, err := m.Dst.BulkLoad(ctx, t, stream)
+	ps := &progressStream{inner: stream, table: res.Table, total: t.EstimatedRows, emit: m.emit}
+	n, err := m.Dst.BulkLoad(ctx, t, ps)
 	res.RowsWritten = n
 	if err != nil {
 		res.Err = fmt.Errorf("load: %w", err)
@@ -154,8 +188,34 @@ func (m *Migrator) migrateTable(ctx context.Context, t *ir.Table) TableResult {
 		res.Err = fmt.Errorf("read: %w", e)
 	}
 	res.Duration = time.Since(start)
+	m.emit(Progress{Phase: "data", Table: res.Table, RowsWritten: n, Total: t.EstimatedRows, Done: true, Err: res.Err})
 	return res
 }
+
+// progressStream wraps a RowStream to emit an in-progress event every
+// progressEvery rows, giving the UI a moving progress indicator for large tables.
+type progressStream struct {
+	inner ir.RowStream
+	table string
+	total int64
+	n     int64
+	emit  func(Progress)
+}
+
+func (s *progressStream) Next() bool {
+	ok := s.inner.Next()
+	if ok {
+		s.n++
+		if s.n%progressEvery == 0 {
+			s.emit(Progress{Phase: "data", Table: s.table, RowsWritten: s.n, Total: s.total})
+		}
+	}
+	return ok
+}
+
+func (s *progressStream) Row() ir.Row  { return s.inner.Row() }
+func (s *progressStream) Err() error   { return s.inner.Err() }
+func (s *progressStream) Close() error { return s.inner.Close() }
 
 // validate compares source vs target row counts when both adapters support it.
 func (m *Migrator) validate(ctx context.Context, tables []*ir.Table, report *Report) {

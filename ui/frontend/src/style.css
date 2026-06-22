@@ -1,0 +1,33 @@
+:root {
+  --auto: #1a7f37; --auto-bg: #dafbe1;
+  --review: #9a6700; --review-bg: #fff8c5;
+  --unsupported: #cf222e; --unsupported-bg: #ffebe9;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; color: #1f2328; background: #f6f8fa; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 22px; }
+h2 { font-size: 18px; border-bottom: 1px solid #d0d7de; padding-bottom: 6px; margin-top: 28px; }
+h3 { font-size: 14px; margin: 18px 0 6px; }
+.muted { color: #656d76; font-size: 13px; }
+.error { color: var(--unsupported); }
+.warn { color: var(--review); font-size: 13px; }
+.conn { display: flex; gap: 12px; }
+.card { flex: 1; background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 14px; }
+.card input, .card select { width: 100%; margin-top: 8px; padding: 6px 8px; border: 1px solid #d0d7de; border-radius: 6px; }
+.actions { margin: 16px 0; display: flex; gap: 10px; align-items: center; }
+button { padding: 8px 16px; border: 1px solid #d0d7de; border-radius: 6px; background: #fff; cursor: pointer; }
+button.primary { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+button:disabled { opacity: 0.5; cursor: default; }
+table { border-collapse: collapse; width: 100%; background: #fff; font-size: 13px; }
+th, td { border: 1px solid #d0d7de; padding: 5px 9px; text-align: left; }
+code { background: #eff1f3; padding: 1px 5px; border-radius: 4px; }
+.badge { padding: 1px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge.auto { color: var(--auto); background: var(--auto-bg); }
+.badge.review { color: var(--review); background: var(--review-bg); }
+.badge.unsupported { color: var(--unsupported); background: var(--unsupported-bg); }
+.prog { display: flex; align-items: center; gap: 12px; margin: 6px 0; font-size: 13px; }
+.prog > span:first-child { width: 220px; }
+.bar { flex: 1; height: 10px; background: #eaeef2; border-radius: 6px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--auto); transition: width .2s; }
+pre { background: #fff; border: 1px solid #d0d7de; border-radius: 6px; padding: 12px; overflow: auto; font-size: 12px; }

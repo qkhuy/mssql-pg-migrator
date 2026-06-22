@@ -1,0 +1,10 @@
+source:
+  engine: mssql
+  dsn: "sqlserver://user:pass@host:1433?database=SourceDB"
+target:
+  engine: postgres
+  dsn: "postgres://user:pass@host:5432/targetdb?sslmode=require"
+migration:
+  dry_run: false
+  parallelism: 4
+  tables: []        # empty = all tables

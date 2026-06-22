@@ -1,0 +1,44 @@
+name: Build
+
+# On-demand cross-compile sanity check for all platforms (artifacts only, no
+# release). Release packaging/publishing lives in release.yml, triggered by tags.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build CLI
+        env:
+          CGO_ENABLED: "0" # pgx and go-mssqldb are pure Go — static cross-compile
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          out="migrator_${GOOS}_${GOARCH}"
+          [ "${GOOS}" = "windows" ] && out="${out}.exe"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=dev-${GITHUB_SHA::7}" -o "dist/${out}" ./cmd/migrator
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migrator_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/*

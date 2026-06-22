@@ -21,12 +21,18 @@ type Source interface {
 	// Introspect reads the full schema into the canonical IR.
 	Introspect(ctx context.Context) (*ir.Schema, error)
 
-	// Read streams the rows of a table within the given primary-key range.
-	// A zero Range (empty Column) reads the whole table. Rows are delivered on
-	// the rows channel, which is closed when the range is exhausted; a fatal
-	// error is delivered on the errs channel. This split lets the pipeline read
-	// chunks in parallel and checkpoint progress for resumability.
-	Read(ctx context.Context, table *ir.Table, r Range) (rows <-chan ir.Row, errs <-chan error)
+	// Read returns a pull-based stream of a table's rows within the given
+	// range. A zero Range (empty Column) reads the whole table. The error
+	// return is for failures opening the stream; per-row failures surface via
+	// the stream's Err().
+	Read(ctx context.Context, table *ir.Table, r Range) (ir.RowStream, error)
+}
+
+// Counter is an optional capability: report a table's exact row count, used by
+// the pipeline to validate a migration. Adapters that can't count are simply
+// skipped during validation.
+type Counter interface {
+	Count(ctx context.Context, table *ir.Table) (int64, error)
 }
 
 // Range bounds a chunk by a single key column for parallel, resumable reads.

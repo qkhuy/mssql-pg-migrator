@@ -3,10 +3,30 @@
 /bin/
 *.exe
 
-# Local config with secrets
+# Local config with secrets (example/demo configs are committed)
 config.json
 config.local.json
+config.yaml
+config.yml
+config.local.yaml
+config.local.yml
 
 # Go
 *.test
 *.out
+
+# Generated reports
+assessment.html
+assessment.md
+*.report.html
+
+# Wails UI build artifacts / generated bindings / deps
+ui/build/bin/
+ui/frontend/dist/*
+!ui/frontend/dist/.gitkeep
+ui/frontend/node_modules/
+ui/frontend/wailsjs/
+
+# stray UI binaries
+ui/ui
+ui/migrator-ui

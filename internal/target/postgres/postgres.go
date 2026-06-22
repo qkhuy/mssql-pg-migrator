@@ -127,7 +127,9 @@ func (t *Target) RenderDDL(s *ir.Schema) ([]string, []target.Warning, error) {
 		if pk := tbl.PrimaryKey; pk != nil && len(pk.Columns) > 0 {
 			cols = append(cols, fmt.Sprintf("  PRIMARY KEY (%s)", strings.Join(t.lowerAll(pk.Columns), ", ")))
 		}
-		stmts = append(stmts, fmt.Sprintf("CREATE TABLE %s (\n%s\n);", name, strings.Join(cols, ",\n")))
+		// IF NOT EXISTS keeps ApplySchema idempotent so a resumed run (after a
+		// partial schema failure) does not error on already-created tables.
+		stmts = append(stmts, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n%s\n);", name, strings.Join(cols, ",\n")))
 	}
 
 	for _, v := range s.Views {

@@ -70,7 +70,7 @@ func TestRenderDDL(t *testing.T) {
 	if len(stmts) != 1 {
 		t.Fatalf("got %d statements, want 1", len(stmts))
 	}
-	want := "CREATE TABLE dbo.orders"
+	want := "CREATE TABLE IF NOT EXISTS dbo.orders"
 	if got := stmts[0]; len(got) < len(want) || got[:len(want)] != want {
 		t.Errorf("statement = %q, want prefix %q", got, want)
 	}

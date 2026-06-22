@@ -27,7 +27,8 @@ import (
 	_ "github.com/qkhuy/mssql-pg-migrator/internal/target/postgres"
 )
 
-const version = "0.1.0"
+// version is overridable at build time via -ldflags "-X main.version=...".
+var version = "0.1.0"
 
 func main() {
 	if len(os.Args) < 2 {

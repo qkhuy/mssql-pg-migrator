@@ -1,0 +1,57 @@
+name: Build
+
+# Cross-compiles the CLI for all supported platforms. Runs on demand and on
+# version tags; on a tag it also attaches the binaries to the GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to create/update releases on tag builds
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build CLI
+        env:
+          CGO_ENABLED: "0" # pgx and go-mssqldb are pure Go — static cross-compile
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          version="${GITHUB_REF_NAME}"
+          [ "${GITHUB_REF_TYPE}" = "tag" ] || version="dev-${GITHUB_SHA::7}"
+          out="migrator_${GOOS}_${GOARCH}"
+          [ "${GOOS}" = "windows" ] && out="${out}.exe"
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w -X main.version=${version}" -o "dist/${out}" ./cmd/migrator
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migrator_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/*
+
+      - name: Attach binaries to the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

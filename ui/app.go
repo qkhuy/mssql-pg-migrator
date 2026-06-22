@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -34,10 +35,36 @@ func (a *App) Engines() map[string][]string {
 	return map[string][]string{"sources": src, "targets": dst}
 }
 
+// TestSource / TestTarget verify a connection; the frontend shows a green/red
+// indicator. They resolve (no error) on success and reject on failure.
+func (a *App) TestSource(e app.Endpoint) error { return a.svc.TestSource(a.ctx, e) }
+func (a *App) TestTarget(e app.Endpoint) error { return a.svc.TestTarget(a.ctx, e) }
+
 // Assess returns the full assessment (JSON-serialized to the frontend, which
 // renders the table/column/type mappings and status badges).
 func (a *App) Assess(src, dst app.Endpoint) (*assess.Assessment, error) {
 	return a.svc.Assess(a.ctx, src, dst)
+}
+
+// ExportAssessHTML renders the assessment to HTML and prompts a native save
+// dialog. Returns the saved path, or "" if the user cancelled.
+func (a *App) ExportAssessHTML(src, dst app.Endpoint) (string, error) {
+	html, err := a.svc.AssessHTML(a.ctx, src, dst)
+	if err != nil {
+		return "", err
+	}
+	path, err := wruntime.SaveFileDialog(a.ctx, wruntime.SaveDialogOptions{
+		Title:           "Lưu báo cáo đánh giá",
+		DefaultFilename: "assessment.html",
+		Filters:         []wruntime.FileFilter{{DisplayName: "HTML", Pattern: "*.html"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(html), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // AssessHTML returns the rendered HTML report (for an in-app preview/export).

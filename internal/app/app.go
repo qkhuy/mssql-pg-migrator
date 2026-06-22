@@ -39,6 +39,25 @@ func (s *Service) Engines() (sources, targets []string) {
 	return source.Engines(), target.Engines()
 }
 
+// TestSource opens and immediately closes the source connection to verify the
+// engine and DSN are valid and reachable.
+func (s *Service) TestSource(ctx context.Context, e Endpoint) error {
+	src, err := source.Open(ctx, e.Engine, e.DSN)
+	if err != nil {
+		return err
+	}
+	return src.Close()
+}
+
+// TestTarget opens and immediately closes the target connection.
+func (s *Service) TestTarget(ctx context.Context, e Endpoint) error {
+	dst, err := target.Open(ctx, e.Engine, e.DSN)
+	if err != nil {
+		return err
+	}
+	return dst.Close()
+}
+
 // Assess opens the source read-only, introspects it, and builds the assessment
 // using the target's pure mapping logic (no target connection needed).
 func (s *Service) Assess(ctx context.Context, src, dst Endpoint) (*assess.Assessment, error) {

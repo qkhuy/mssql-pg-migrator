@@ -1,14 +1,9 @@
 name: Build
 
-# Cross-compiles the CLI for all supported platforms. Runs on demand and on
-# version tags; on a tag it also attaches the binaries to the GitHub Release.
+# On-demand cross-compile sanity check for all platforms (artifacts only, no
+# release). Release packaging/publishing lives in release.yml, triggered by tags.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
-
-permissions:
-  contents: write # needed to create/update releases on tag builds
 
 jobs:
   build:
@@ -37,21 +32,13 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          version="${GITHUB_REF_NAME}"
-          [ "${GITHUB_REF_TYPE}" = "tag" ] || version="dev-${GITHUB_SHA::7}"
           out="migrator_${GOOS}_${GOARCH}"
           [ "${GOOS}" = "windows" ] && out="${out}.exe"
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -X main.version=${version}" -o "dist/${out}" ./cmd/migrator
+          go build -trimpath -ldflags "-s -w -X main.version=dev-${GITHUB_SHA::7}" -o "dist/${out}" ./cmd/migrator
           ls -lh dist/
 
       - uses: actions/upload-artifact@v4
         with:
           name: migrator_${{ matrix.goos }}_${{ matrix.goarch }}
           path: dist/*
-
-      - name: Attach binaries to the release
-        if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*

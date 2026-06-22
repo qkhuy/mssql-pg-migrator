@@ -78,8 +78,30 @@ The bottleneck is I/O, not CPU. The design targets it directly:
 No other code changes are required — all existing engines on the other side
 immediately interoperate with the new one.
 
+## Assessment report
+
+`migrator -config c.json -assess` runs read-only and renders a visual report
+(HTML or Markdown) of the full plan: schema→schema, table→table, column→column,
+**type→type**, view→…, routine→…, data volumes, and a color-coded status
+(✅ auto / ⚠️ review / ❌ unsupported). The headline auto-percentage is counted
+over columns (leaf objects) plus views and routines, so one unmappable column
+does not sink a whole table's number.
+
+```
+migrator -config c.json -assess -format html -out assessment.html
+migrator -config c.json -assess -format md            # markdown to stdout
+```
+
+It needs only a source connection: the target's mapping logic is pure
+(`target.Mapper`), so no target database is required to assess.
+
 ## Status
 
-Skeleton: interfaces, registries, IR, pipeline flow, CLI, and stub `mssql`
-source + `postgres` target are in place and compile. Next: implement the MSSQL
-introspection + read path and the PostgreSQL DDL generation + `COPY` load.
+- Interfaces, registries, IR (incl. views/routines), pipeline flow, CLI: done.
+- PostgreSQL type mapping + DDL rendering: implemented (deterministic, pure).
+- Assessment report (HTML + Markdown): implemented.
+- `demo` source: representative schema for end-to-end report demos / fixtures.
+- `mssql` source + PostgreSQL live paths (Open/ApplySchema/BulkLoad): stubbed.
+
+Next: implement MSSQL introspection + range-chunked read, and the PostgreSQL
+`COPY` bulk-load (pgx.CopyFrom).

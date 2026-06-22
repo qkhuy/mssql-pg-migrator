@@ -40,6 +40,51 @@ type Warning struct {
 	Message string
 }
 
+// TypeMapping is the result of mapping one canonical type to a target's native
+// type. Lossy/Note feed the assessment report so users see exactly how each
+// type converts and where to look closer.
+type TypeMapping struct {
+	Native string // target native type, e.g. "numeric(19,4)"
+	Lossy  bool
+	Note   string
+}
+
+// Mapper exposes a target's pure, connection-free mapping logic. It backs the
+// assessment report and dry-run rendering — neither needs a live target
+// connection. A Target may also implement Mapper (PostgreSQL does).
+type Mapper interface {
+	// MapType maps a canonical type to the target's native type.
+	MapType(ir.CanonicalType) TypeMapping
+	// MapIdentifier applies the target's identifier policy (e.g. PostgreSQL
+	// folds unquoted identifiers to lower case), so the report can show the
+	// real source→target name for every schema/table/column.
+	MapIdentifier(name string) string
+}
+
+// New builds an unopened Target via its registered factory (no connection).
+// Useful for dry-run rendering, which does not touch the target database.
+func New(name string) (Target, error) {
+	f, ok := registry[name]
+	if !ok {
+		return nil, fmt.Errorf("target: unknown engine %q (available: %v)", name, Engines())
+	}
+	return f(), nil
+}
+
+// NewMapper builds a target's Mapper without opening a connection. Returns an
+// error if the engine does not yet support assessment/mapping.
+func NewMapper(name string) (Mapper, error) {
+	t, err := New(name)
+	if err != nil {
+		return nil, err
+	}
+	m, ok := t.(Mapper)
+	if !ok {
+		return nil, fmt.Errorf("target %q does not support assessment yet", name)
+	}
+	return m, nil
+}
+
 // Factory constructs an unopened Target.
 type Factory func() Target
 

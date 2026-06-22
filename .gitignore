@@ -10,3 +10,8 @@ config.local.json
 # Go
 *.test
 *.out
+
+# Generated reports
+assessment.html
+assessment.md
+*.report.html

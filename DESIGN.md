@@ -78,8 +78,36 @@ The bottleneck is I/O, not CPU. The design targets it directly:
 No other code changes are required — all existing engines on the other side
 immediately interoperate with the new one.
 
-## Status
+## Assessment report
 
-Skeleton: interfaces, registries, IR, pipeline flow, CLI, and stub `mssql`
-source + `postgres` target are in place and compile. Next: implement the MSSQL
-introspection + read path and the PostgreSQL DDL generation + `COPY` load.
+`migrator -config c.json -assess` runs read-only and renders a visual report
+(HTML or Markdown) of the full plan: schema→schema, table→table, column→column,
+**type→type**, view→…, routine→…, data volumes, and a color-coded status
+(✅ auto / ⚠️ review / ❌ unsupported). The headline auto-percentage is counted
+over columns (leaf objects) plus views and routines, so one unmappable column
+does not sink a whole table's number.
+
+```
+migrator -config c.json -assess -format html -out assessment.html
+migrator -config c.json -assess -format md            # markdown to stdout
+```
+
+It needs only a source connection: the target's mapping logic is pure
+(`target.Mapper`), so no target database is required to assess.
+
+## Status (v0.1.0)
+
+Implemented:
+- Canonical IR (tables, columns, types, PK/FK, indexes, views, routines).
+- SQL Server source: introspection + streaming reads + row count.
+- PostgreSQL target: type mapping, DDL, `COPY` bulk load (pgx.CopyFrom),
+  finalize (indexes/FKs/identity sequences), row count.
+- Pipeline: parallel table load, checkpoint-based resume, validation.
+- Assessment report (HTML + Markdown). CLI: assess / plan / run / engines / version.
+- Unit tests; integration round trip gated behind the `integration` build tag.
+
+Roadmap:
+- Intra-table range-parallel reads for very large single tables.
+- Value-coercion hardening for SQL Server types needing review (e.g.
+  `uniqueidentifier`, spatial), and opt-in view/routine translation.
+- Additional engines (MySQL, Oracle) as source and/or target.

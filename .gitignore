@@ -3,9 +3,13 @@
 /bin/
 *.exe
 
-# Local config with secrets
+# Local config with secrets (example/demo configs are committed)
 config.json
 config.local.json
+config.yaml
+config.yml
+config.local.yaml
+config.local.yml
 
 # Go
 *.test

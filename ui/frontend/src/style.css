@@ -12,6 +12,8 @@ h3 { font-size: 14px; margin: 18px 0 6px; }
 .muted { color: #656d76; font-size: 13px; }
 .error { color: var(--unsupported); }
 .warn { color: var(--review); font-size: 13px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cfgbtns { display: flex; gap: 8px; }
 .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .conn { display: flex; gap: 12px; }
 .card { flex: 1; background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 14px; }

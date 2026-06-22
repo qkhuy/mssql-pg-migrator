@@ -1,12 +1,15 @@
 // Package pipeline orchestrates a migration: introspect the source, render or
-// apply the target schema, move data in parallel chunks, then validate. It is
-// engine-agnostic — it only talks to the source.Source and target.Target
-// interfaces, so any registered source/target pair works without changes here.
+// apply the target schema, move data in parallel (one table per worker, each
+// streamed via the target's bulk-load path), finalize indexes/FKs, then
+// validate. It is engine-agnostic — it only uses the source.Source and
+// target.Target interfaces, so any registered source/target pair works here.
 package pipeline
 
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/qkhuy/mssql-pg-migrator/internal/ir"
 	"github.com/qkhuy/mssql-pg-migrator/internal/source"
@@ -15,15 +18,10 @@ import (
 
 // Options controls a migration run.
 type Options struct {
-	// DryRun renders DDL and a plan without writing anything to the target.
-	DryRun bool
-
-	// Parallelism is the number of tables/chunks moved concurrently.
-	Parallelism int
-
-	// Tables, if non-empty, restricts the run to these table names; otherwise
-	// every introspected table is migrated.
-	Tables []string
+	DryRun      bool     // render DDL and plan without writing to the target
+	Parallelism int      // number of tables migrated concurrently (default 4)
+	Tables      []string // restrict to these table names (empty = all)
+	StateFile   string   // checkpoint path for resumability (empty = disabled)
 }
 
 // Migrator wires a source and target together under a set of options.
@@ -35,36 +33,36 @@ type Migrator struct {
 
 // TableResult records the outcome for one table.
 type TableResult struct {
-	Table        string
-	RowsRead     int64
-	RowsWritten  int64
-	Err          error
+	Table       string
+	RowsWritten int64
+	SourceRows  int64 // from validation; -1 if not validated
+	Duration    time.Duration
+	Skipped     bool // already done per checkpoint
+	Err         error
 }
 
-// Report summarizes a run for printing or serialization.
+// Report summarizes a run.
 type Report struct {
-	DryRun   bool
-	DDL      []string
-	Warnings []target.Warning
-	Tables   []TableResult
+	DryRun    bool
+	DDL       []string
+	Warnings  []target.Warning
+	Tables    []TableResult
+	Finalized bool
+	Validated bool
 }
 
-// Run executes the migration. The body below is the intended control flow;
-// the chunked-parallel data movement and validation are stubbed until the
-// adapters land, but the structure and the engine-agnostic contract are final.
+// Run executes the migration.
 func (m *Migrator) Run(ctx context.Context) (*Report, error) {
 	if m.Opts.Parallelism <= 0 {
 		m.Opts.Parallelism = 4
 	}
 
-	// 1. Introspect the source into canonical IR.
 	schema, err := m.Src.Introspect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("introspect: %w", err)
 	}
 	tables := m.selectTables(schema)
 
-	// 2. Render the target DDL. Always rendered so the report can show it.
 	ddl, warnings, err := m.Dst.RenderDDL(schema)
 	if err != nil {
 		return nil, fmt.Errorf("render ddl: %w", err)
@@ -72,49 +70,125 @@ func (m *Migrator) Run(ctx context.Context) (*Report, error) {
 	report := &Report{DryRun: m.Opts.DryRun, DDL: ddl, Warnings: warnings}
 
 	if m.Opts.DryRun {
-		// Dry-run stops here: nothing is written to the target.
 		for _, t := range tables {
-			report.Tables = append(report.Tables, TableResult{Table: t.Name})
+			report.Tables = append(report.Tables, TableResult{Table: qname(t), SourceRows: t.EstimatedRows})
 		}
 		return report, nil
 	}
 
-	// 3. Create schema (tables + PKs; indexes/FKs deferred until after load).
-	if err := m.Dst.ApplySchema(ctx, schema); err != nil {
-		return nil, fmt.Errorf("apply schema: %w", err)
+	cp, err := loadCheckpoint(m.Opts.StateFile)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: %w", err)
 	}
 
-	// 4. Move data. TODO: chunk each table by primary-key range and run up to
-	// Opts.Parallelism chunks concurrently, with checkpointing for resume.
-	for _, t := range tables {
-		report.Tables = append(report.Tables, m.migrateTable(ctx, t))
+	if !cp.SchemaApplied {
+		if err := m.Dst.ApplySchema(ctx, schema); err != nil {
+			return nil, fmt.Errorf("apply schema: %w", err)
+		}
+		cp.markSchemaApplied()
 	}
 
-	// 5. TODO: rebuild deferred indexes/FKs, then validate (row counts,
-	// checksums) and attach results to the report.
+	results := m.loadAll(ctx, tables, cp)
+	report.Tables = results
+	if failed(results) {
+		return report, fmt.Errorf("%d table(s) failed; rerun to resume", countFailed(results))
+	}
+
+	if err := m.Dst.Finalize(ctx, schema); err != nil {
+		return report, fmt.Errorf("finalize (indexes/foreign keys/sequences): %w", err)
+	}
+	report.Finalized = true
+
+	m.validate(ctx, tables, report)
+	cp.clear()
 	return report, nil
 }
 
-// migrateTable streams one table's rows from source to target. This is the
-// single-chunk path; parallel range-chunking is layered on top in Run.
+// loadAll moves every not-yet-done table, up to Parallelism at a time. Indexes
+// and foreign keys are created later (Finalize), so load order is irrelevant
+// and tables can run concurrently.
+func (m *Migrator) loadAll(ctx context.Context, tables []*ir.Table, cp *checkpoint) []TableResult {
+	results := make([]TableResult, len(tables))
+	sem := make(chan struct{}, m.Opts.Parallelism)
+	var wg sync.WaitGroup
+
+	for i, t := range tables {
+		if cp.isDone(qname(t)) {
+			results[i] = TableResult{Table: qname(t), Skipped: true, SourceRows: -1}
+			continue
+		}
+		wg.Add(1)
+		go func(i int, t *ir.Table) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			res := m.migrateTable(ctx, t)
+			results[i] = res
+			if res.Err == nil {
+				cp.markDone(qname(t))
+			}
+		}(i, t)
+	}
+	wg.Wait()
+	return results
+}
+
 func (m *Migrator) migrateTable(ctx context.Context, t *ir.Table) TableResult {
-	res := TableResult{Table: t.Name}
+	start := time.Now()
+	res := TableResult{Table: qname(t), SourceRows: -1}
 
-	rows, errs := m.Src.Read(ctx, t, source.Range{}) // whole table for now
-
-	written, err := m.Dst.BulkLoad(ctx, t, rows)
-	res.RowsWritten = written
+	stream, err := m.Src.Read(ctx, t, source.Range{})
 	if err != nil {
-		res.Err = err
+		res.Err = fmt.Errorf("read: %w", err)
+		res.Duration = time.Since(start)
 		return res
 	}
-	if e := <-errs; e != nil {
-		res.Err = e
+	defer stream.Close()
+
+	n, err := m.Dst.BulkLoad(ctx, t, stream)
+	res.RowsWritten = n
+	if err != nil {
+		res.Err = fmt.Errorf("load: %w", err)
+	} else if e := stream.Err(); e != nil {
+		res.Err = fmt.Errorf("read: %w", e)
 	}
+	res.Duration = time.Since(start)
 	return res
 }
 
-// selectTables applies the Tables filter, preserving introspection order.
+// validate compares source vs target row counts when both adapters support it.
+func (m *Migrator) validate(ctx context.Context, tables []*ir.Table, report *Report) {
+	srcCounter, okS := m.Src.(source.Counter)
+	dstCounter, okT := m.Dst.(target.Counter)
+	if !okS || !okT {
+		return
+	}
+	report.Validated = true
+	byName := map[string]int{}
+	for i := range report.Tables {
+		byName[report.Tables[i].Table] = i
+	}
+	for _, t := range tables {
+		idx, ok := byName[qname(t)]
+		if !ok {
+			continue
+		}
+		sc, err := srcCounter.Count(ctx, t)
+		if err != nil {
+			continue
+		}
+		report.Tables[idx].SourceRows = sc
+		dc, err := dstCounter.Count(ctx, t)
+		if err != nil {
+			continue
+		}
+		if sc != dc && report.Tables[idx].Err == nil {
+			report.Tables[idx].Err = fmt.Errorf("row count mismatch: source=%d target=%d", sc, dc)
+		}
+	}
+}
+
 func (m *Migrator) selectTables(s *ir.Schema) []*ir.Table {
 	if len(m.Opts.Tables) == 0 {
 		return s.Tables
@@ -125,9 +199,28 @@ func (m *Migrator) selectTables(s *ir.Schema) []*ir.Table {
 	}
 	var out []*ir.Table
 	for _, t := range s.Tables {
-		if want[t.Name] {
+		if want[t.Name] || want[qname(t)] {
 			out = append(out, t)
 		}
 	}
 	return out
+}
+
+func qname(t *ir.Table) string {
+	if t.Schema == "" {
+		return t.Name
+	}
+	return t.Schema + "." + t.Name
+}
+
+func failed(rs []TableResult) bool { return countFailed(rs) > 0 }
+
+func countFailed(rs []TableResult) int {
+	n := 0
+	for _, r := range rs {
+		if r.Err != nil {
+			n++
+		}
+	}
+	return n
 }

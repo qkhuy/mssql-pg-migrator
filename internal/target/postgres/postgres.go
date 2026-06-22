@@ -1,17 +1,19 @@
 // Package postgres is the PostgreSQL target adapter. It registers itself as the
-// "postgres" target engine on import.
+// "postgres" target engine on import and uses jackc/pgx (COPY protocol for
+// bulk load).
 //
-// The mapping logic (MapType, MapIdentifier) and DDL rendering are implemented
-// for real and are pure/connection-free — they back the assessment report and
-// dry-run. The live paths (Open/ApplySchema/BulkLoad) are stubbed until the
-// pgx driver is wired (BulkLoad will use pgx.CopyFrom for COPY-speed loads).
+// MapType / MapIdentifier / RenderDDL are pure and connection-free (they back
+// the assessment report and dry-run). Open / ApplySchema / BulkLoad / Finalize
+// use a live connection pool.
 package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/qkhuy/mssql-pg-migrator/internal/ir"
 	"github.com/qkhuy/mssql-pg-migrator/internal/target"
@@ -21,25 +23,20 @@ func init() {
 	target.Register("postgres", func() target.Target { return &Target{} })
 }
 
-// Target implements target.Target (and target.Mapper) for PostgreSQL.
+// Target implements target.Target, target.Mapper, and target.Counter for PostgreSQL.
 type Target struct {
-	dsn string
-	// pool *pgxpool.Pool
+	dsn  string
+	pool *pgxpool.Pool
 }
-
-var errNotImplemented = errors.New("postgres target: live connection not implemented yet")
 
 // --- target.Mapper (pure, no connection) ---------------------------------
 
 // MapIdentifier folds to lower case: PostgreSQL lower-cases unquoted
 // identifiers, so this is the faithful, collision-free default.
-func (t *Target) MapIdentifier(name string) string {
-	return strings.ToLower(name)
-}
+func (t *Target) MapIdentifier(name string) string { return strings.ToLower(name) }
 
 // MapType maps a canonical type to a PostgreSQL native type. Deterministic and
-// rule-based — no guessing. Unknown source types fall back to text and are
-// flagged lossy so the report surfaces them for manual review.
+// rule-based. Unknown source types fall back to text and are flagged lossy.
 func (t *Target) MapType(ct ir.CanonicalType) target.TypeMapping {
 	switch ct.Kind {
 	case ir.KindBool:
@@ -100,11 +97,9 @@ func (t *Target) MapType(ct ir.CanonicalType) target.TypeMapping {
 	}
 }
 
-// --- target.Target -------------------------------------------------------
-
 // RenderDDL produces CREATE TABLE statements (columns + primary keys) and a
-// warning per lossy/unsupported construct. Indexes and foreign keys are
-// rendered separately by the pipeline after bulk load. Pure — no connection.
+// warning per lossy/unsupported construct. Indexes and FKs are created by
+// Finalize, not here. Pure — no connection.
 func (t *Target) RenderDDL(s *ir.Schema) ([]string, []target.Warning, error) {
 	var stmts []string
 	var warnings []target.Warning
@@ -130,11 +125,7 @@ func (t *Target) RenderDDL(s *ir.Schema) ([]string, []target.Warning, error) {
 			cols = append(cols, line)
 		}
 		if pk := tbl.PrimaryKey; pk != nil && len(pk.Columns) > 0 {
-			lowered := make([]string, len(pk.Columns))
-			for i, c := range pk.Columns {
-				lowered[i] = t.MapIdentifier(c)
-			}
-			cols = append(cols, fmt.Sprintf("  PRIMARY KEY (%s)", strings.Join(lowered, ", ")))
+			cols = append(cols, fmt.Sprintf("  PRIMARY KEY (%s)", strings.Join(t.lowerAll(pk.Columns), ", ")))
 		}
 		stmts = append(stmts, fmt.Sprintf("CREATE TABLE %s (\n%s\n);", name, strings.Join(cols, ",\n")))
 	}
@@ -154,6 +145,147 @@ func (t *Target) RenderDDL(s *ir.Schema) ([]string, []target.Warning, error) {
 	return stmts, warnings, nil
 }
 
+// --- live paths ----------------------------------------------------------
+
+func (t *Target) Open(ctx context.Context, dsn string) error {
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return fmt.Errorf("ping: %w", err)
+	}
+	t.dsn, t.pool = dsn, pool
+	return nil
+}
+
+func (t *Target) Close() error {
+	if t.pool != nil {
+		t.pool.Close()
+	}
+	return nil
+}
+
+// ApplySchema creates the target schemas, then the tables + primary keys.
+func (t *Target) ApplySchema(ctx context.Context, s *ir.Schema) error {
+	for _, sch := range t.targetSchemas(s) {
+		if _, err := t.pool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", sch)); err != nil {
+			return fmt.Errorf("create schema %s: %w", sch, err)
+		}
+	}
+	stmts, _, err := t.RenderDDL(s)
+	if err != nil {
+		return err
+	}
+	for _, stmt := range stmts {
+		if _, err := t.pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("apply ddl: %w\n%s", err, stmt)
+		}
+	}
+	return nil
+}
+
+// BulkLoad streams rows into the table via the COPY protocol.
+func (t *Target) BulkLoad(ctx context.Context, tbl *ir.Table, stream ir.RowStream) (int64, error) {
+	cols := make([]string, len(tbl.Columns))
+	for i, c := range tbl.Columns {
+		cols[i] = t.MapIdentifier(c.Name)
+	}
+	return t.pool.CopyFrom(ctx, t.identifier(tbl.Schema, tbl.Name), cols, &pgxSource{s: stream})
+}
+
+// pgxSource adapts ir.RowStream to pgx.CopyFromSource. A mid-stream source
+// error surfaces via Err() and aborts the COPY (pgx checks Err after Next).
+type pgxSource struct{ s ir.RowStream }
+
+func (p *pgxSource) Next() bool             { return p.s.Next() }
+func (p *pgxSource) Values() ([]any, error) { return []any(p.s.Row()), nil }
+func (p *pgxSource) Err() error             { return p.s.Err() }
+
+// Finalize creates secondary indexes and foreign keys, then advances identity
+// sequences past the loaded data.
+func (t *Target) Finalize(ctx context.Context, s *ir.Schema) error {
+	for _, tbl := range s.Tables {
+		tname := t.qualified(tbl.Schema, tbl.Name)
+
+		for _, ix := range tbl.Indexes {
+			unique := ""
+			if ix.Unique {
+				unique = "UNIQUE "
+			}
+			idxName := t.MapIdentifier(tbl.Name + "_" + ix.Name)
+			stmt := fmt.Sprintf("CREATE %sINDEX IF NOT EXISTS %s ON %s (%s)",
+				unique, idxName, tname, strings.Join(t.lowerAll(ix.Columns), ", "))
+			if _, err := t.pool.Exec(ctx, stmt); err != nil {
+				return fmt.Errorf("create index %s: %w", idxName, err)
+			}
+		}
+
+		for _, fk := range tbl.ForeignKeys {
+			stmt := t.foreignKeyDDL(tbl, fk)
+			if _, err := t.pool.Exec(ctx, stmt); err != nil {
+				return fmt.Errorf("add foreign key %s: %w", fk.Name, err)
+			}
+		}
+
+		for _, c := range tbl.Columns {
+			if !c.IsIdentity {
+				continue
+			}
+			col := t.MapIdentifier(c.Name)
+			stmt := fmt.Sprintf(
+				"SELECT setval(pg_get_serial_sequence('%s', '%s'), GREATEST((SELECT COALESCE(MAX(%s), 0) FROM %s), 1))",
+				tname, col, col, tname)
+			if _, err := t.pool.Exec(ctx, stmt); err != nil {
+				return fmt.Errorf("reset sequence for %s.%s: %w", tname, col, err)
+			}
+		}
+	}
+	return nil
+}
+
+// Count returns the exact row count for validation.
+func (t *Target) Count(ctx context.Context, tbl *ir.Table) (int64, error) {
+	var n int64
+	q := fmt.Sprintf("SELECT count(*) FROM %s", t.qualified(tbl.Schema, tbl.Name))
+	err := t.pool.QueryRow(ctx, q).Scan(&n)
+	return n, err
+}
+
+// --- helpers -------------------------------------------------------------
+
+func (t *Target) foreignKeyDDL(tbl *ir.Table, fk *ir.ForeignKey) string {
+	refSchema, refTable := splitQualified(fk.RefTable)
+	ref := t.qualified(refSchema, refTable)
+	name := t.MapIdentifier(tbl.Name + "_" + fk.Name)
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
+		t.qualified(tbl.Schema, tbl.Name), name,
+		strings.Join(t.lowerAll(fk.Columns), ", "), ref,
+		strings.Join(t.lowerAll(fk.RefColumns), ", "))
+	if fk.OnDelete != "" && fk.OnDelete != "NO ACTION" {
+		stmt += " ON DELETE " + fk.OnDelete
+	}
+	if fk.OnUpdate != "" && fk.OnUpdate != "NO ACTION" {
+		stmt += " ON UPDATE " + fk.OnUpdate
+	}
+	return stmt
+}
+
+func (t *Target) targetSchemas(s *ir.Schema) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, tbl := range s.Tables {
+		sc := t.MapIdentifier(tbl.Schema)
+		if sc == "" || sc == "public" || seen[sc] {
+			continue
+		}
+		seen[sc] = true
+		out = append(out, sc)
+	}
+	return out
+}
+
 func (t *Target) qualified(schema, name string) string {
 	if schema == "" {
 		return t.MapIdentifier(name)
@@ -161,19 +293,24 @@ func (t *Target) qualified(schema, name string) string {
 	return t.MapIdentifier(schema) + "." + t.MapIdentifier(name)
 }
 
-func (t *Target) Open(ctx context.Context, dsn string) error {
-	t.dsn = dsn
-	// TODO: pgxpool.New(ctx, dsn); verify with Ping.
-	return errNotImplemented
+func (t *Target) identifier(schema, name string) pgx.Identifier {
+	if schema == "" {
+		return pgx.Identifier{t.MapIdentifier(name)}
+	}
+	return pgx.Identifier{t.MapIdentifier(schema), t.MapIdentifier(name)}
 }
 
-func (t *Target) Close() error { return nil }
-
-func (t *Target) ApplySchema(ctx context.Context, s *ir.Schema) error {
-	return errNotImplemented
+func (t *Target) lowerAll(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = t.MapIdentifier(n)
+	}
+	return out
 }
 
-// BulkLoad will use the PostgreSQL COPY protocol via pgx.CopyFrom.
-func (t *Target) BulkLoad(ctx context.Context, table *ir.Table, rows <-chan ir.Row) (int64, error) {
-	return 0, errNotImplemented
+func splitQualified(s string) (schema, name string) {
+	if i := strings.LastIndex(s, "."); i >= 0 {
+		return s[:i], s[i+1:]
+	}
+	return "", s
 }

@@ -21,15 +21,26 @@ type Target interface {
 	// the statements plus warnings for every lossy or unsupported construct.
 	RenderDDL(s *ir.Schema) (stmts []string, warnings []Warning, err error)
 
-	// ApplySchema creates tables and constraints. Implementations should defer
-	// secondary indexes and foreign keys until after bulk load (the pipeline
-	// coordinates this) for speed.
+	// ApplySchema creates schemas, tables, and primary keys. Secondary indexes
+	// and foreign keys are intentionally NOT created here — they are deferred
+	// to Finalize so bulk load runs against constraint-free tables for speed.
 	ApplySchema(ctx context.Context, s *ir.Schema) error
 
 	// BulkLoad writes a stream of rows into a table using the fastest path the
 	// engine offers (e.g. the COPY protocol for PostgreSQL). It returns the
-	// number of rows written.
-	BulkLoad(ctx context.Context, table *ir.Table, rows <-chan ir.Row) (int64, error)
+	// number of rows written. A mid-stream source error (RowStream.Err) must
+	// abort the load rather than commit a truncated copy.
+	BulkLoad(ctx context.Context, table *ir.Table, rows ir.RowStream) (int64, error)
+
+	// Finalize runs post-load steps: create secondary indexes and foreign
+	// keys, and reset identity/sequence values to follow the loaded data.
+	Finalize(ctx context.Context, s *ir.Schema) error
+}
+
+// Counter is an optional capability: report a table's exact row count, used by
+// the pipeline to validate a migration.
+type Counter interface {
+	Count(ctx context.Context, table *ir.Table) (int64, error)
 }
 
 // Warning flags a construct that could not be translated cleanly. It is shown

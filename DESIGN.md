@@ -95,13 +95,19 @@ migrator -config c.json -assess -format md            # markdown to stdout
 It needs only a source connection: the target's mapping logic is pure
 (`target.Mapper`), so no target database is required to assess.
 
-## Status
+## Status (v0.1.0)
 
-- Interfaces, registries, IR (incl. views/routines), pipeline flow, CLI: done.
-- PostgreSQL type mapping + DDL rendering: implemented (deterministic, pure).
-- Assessment report (HTML + Markdown): implemented.
-- `demo` source: representative schema for end-to-end report demos / fixtures.
-- `mssql` source + PostgreSQL live paths (Open/ApplySchema/BulkLoad): stubbed.
+Implemented:
+- Canonical IR (tables, columns, types, PK/FK, indexes, views, routines).
+- SQL Server source: introspection + streaming reads + row count.
+- PostgreSQL target: type mapping, DDL, `COPY` bulk load (pgx.CopyFrom),
+  finalize (indexes/FKs/identity sequences), row count.
+- Pipeline: parallel table load, checkpoint-based resume, validation.
+- Assessment report (HTML + Markdown). CLI: assess / plan / run / engines / version.
+- Unit tests; integration round trip gated behind the `integration` build tag.
 
-Next: implement MSSQL introspection + range-chunked read, and the PostgreSQL
-`COPY` bulk-load (pgx.CopyFrom).
+Roadmap:
+- Intra-table range-parallel reads for very large single tables.
+- Value-coercion hardening for SQL Server types needing review (e.g.
+  `uniqueidentifier`, spatial), and opt-in view/routine translation.
+- Additional engines (MySQL, Oracle) as source and/or target.

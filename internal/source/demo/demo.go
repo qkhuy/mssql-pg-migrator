@@ -12,6 +12,8 @@ import (
 	"github.com/qkhuy/mssql-pg-migrator/internal/source"
 )
 
+var errNoData = errors.New("demo source: data read not supported (assessment/schema only)")
+
 func init() {
 	source.Register("demo", func() source.Source { return &Source{} })
 }
@@ -22,21 +24,16 @@ type Source struct{}
 func (s *Source) Open(ctx context.Context, dsn string) error { return nil }
 func (s *Source) Close() error                               { return nil }
 
-func (s *Source) Read(ctx context.Context, t *ir.Table, r source.Range) (<-chan ir.Row, <-chan error) {
-	rows := make(chan ir.Row)
-	errs := make(chan error, 1)
-	go func() {
-		defer close(rows)
-		defer close(errs)
-		errs <- errors.New("demo source: data read not supported (assessment/schema only)")
-	}()
-	return rows, errs
+func (s *Source) Read(ctx context.Context, t *ir.Table, r source.Range) (ir.RowStream, error) {
+	return ir.ErrStream{E: errNoData}, nil
 }
 
 // Introspect returns a representative SQL Server-style schema covering common
 // types (including a GEOGRAPHY that has no clean mapping), a view, and routines.
 func (s *Source) Introspect(ctx context.Context) (*ir.Schema, error) {
-	intT := func(bits int) ir.CanonicalType { return ir.CanonicalType{Kind: ir.KindInt, BitWidth: bits, Signed: true} }
+	intT := func(bits int) ir.CanonicalType {
+		return ir.CanonicalType{Kind: ir.KindInt, BitWidth: bits, Signed: true}
+	}
 
 	customers := &ir.Table{
 		Schema: "dbo", Name: "Customers", EstimatedRows: 500_000,

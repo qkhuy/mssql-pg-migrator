@@ -124,6 +124,17 @@
   .banner{display:flex;align-items:center;gap:14px;background:var(--ok-bg);border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:20px}
   .banner .ic{width:40px;height:40px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:20px}
   .banner h3{margin:0;color:#14532d}.banner p{margin:2px 0 0;color:#166534}
+
+  /* ssl */
+  .ssl{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px}
+  .ssl>summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--brand);list-style:none}
+  .ssl>summary::-webkit-details-marker{display:none}
+  .ssl>summary::before{content:"▸ ";color:#94a3b8}
+  .ssl[open]>summary::before{content:"▾ "}
+  .ssl-body{padding-top:6px}
+  .chk{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:#334155;margin:12px 0 4px}
+  .filerow{display:flex;gap:8px;margin-top:4px}
+  .filerow .inp{flex:1}
 </style>
 </head>
 <body>
@@ -164,6 +175,18 @@
               <label class="f">Database</label><input class="inp" value="SourceDB">
               <div class="row"><div style="flex:1"><label class="f">User</label><input class="inp" value="sa"></div>
                 <div style="flex:1"><label class="f">Password</label><input class="inp" type="password" value="••••••••"></div></div>
+              <details class="ssl" open>
+                <summary>🔒 SSL / Bảo mật</summary>
+                <div class="ssl-body">
+                  <label class="f">Encrypt (mã hoá kết nối)</label>
+                  <select class="inp"><option>true</option><option>strict</option><option>false</option><option>disable</option></select>
+                  <label class="chk"><input type="checkbox"> Trust server certificate (chấp nhận self-signed)</label>
+                  <label class="f">CA certificate (.pem/.crt)</label>
+                  <div class="filerow"><input class="inp" placeholder="đường dẫn file CA…" readonly><button class="btn">Chọn…</button></div>
+                  <label class="f">Tên host trong cert (tuỳ chọn)</label>
+                  <input class="inp" placeholder="vd: sql.internal.company.vn">
+                </div>
+              </details>
               <div style="margin-top:14px"><button class="btn">Kiểm tra kết nối</button></div>
             </div>
           </div>
@@ -177,6 +200,18 @@
               <label class="f">Database</label><input class="inp" value="targetdb">
               <div class="row"><div style="flex:1"><label class="f">User</label><input class="inp" value="migrator"></div>
                 <div style="flex:1"><label class="f">Password</label><input class="inp" type="password" value="••••••••"></div></div>
+              <details class="ssl" open>
+                <summary>🔒 SSL / Bảo mật</summary>
+                <div class="ssl-body">
+                  <label class="f">sslmode</label>
+                  <select class="inp"><option>require</option><option>verify-full</option><option>verify-ca</option><option>prefer</option><option>disable</option></select>
+                  <label class="f">CA root cert (sslrootcert)</label>
+                  <div class="filerow"><input class="inp" placeholder="ca.pem…" readonly><button class="btn">Chọn…</button></div>
+                  <label class="f">Client cert / key — mTLS (tuỳ chọn)</label>
+                  <div class="filerow"><input class="inp" placeholder="client.crt (sslcert)" readonly><button class="btn">Chọn…</button></div>
+                  <div class="filerow" style="margin-top:6px"><input class="inp" placeholder="client.key (sslkey)" readonly><button class="btn">Chọn…</button></div>
+                </div>
+              </details>
               <div style="margin-top:14px"><button class="btn">Kiểm tra kết nối</button></div>
             </div>
           </div>
